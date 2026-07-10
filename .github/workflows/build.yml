@@ -1,0 +1,46 @@
+name: Build Zygisk Module
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+          add-to-path: true
+
+      - name: Build for all ABIs
+        run: |
+          mkdir -p build_out
+          for ABI in arm64-v8a armeabi-v7a x86_64 x86; do
+            echo "Building for $ABI"
+            cmake -B build-$ABI -S . \
+              -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+              -DANDROID_ABI=$ABI \
+              -DANDROID_PLATFORM=android-27 \
+              -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-$ABI --config Release
+            mkdir -p zygisk/$ABI
+            cp build-$ABI/libmymod.so zygisk/$ABI/mymod.so
+          done
+
+      - name: Package module zip
+        run: |
+          mkdir -p out
+          zip -r out/mymod.zip module.prop customize.sh zygisk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mymod-zip
+          path: out/mymod.zip
