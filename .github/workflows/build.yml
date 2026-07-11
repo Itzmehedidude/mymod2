@@ -21,7 +21,7 @@ jobs:
 
       - name: Build for all ABIs
         run: |
-          mkdir -p build_out
+          mkdir -p zygisk
           for ABI in arm64-v8a armeabi-v7a x86_64 x86; do
             echo "Building for $ABI"
             cmake -B build-$ABI -S . \
@@ -30,8 +30,7 @@ jobs:
               -DANDROID_PLATFORM=android-27 \
               -DCMAKE_BUILD_TYPE=Release
             cmake --build build-$ABI --config Release
-            mkdir -p zygisk/$ABI
-            cp build-$ABI/libmymod.so zygisk/$ABI/mymod.so
+            cp build-$ABI/libmymod.so zygisk/$ABI.so
           done
 
       - name: Package module zip
