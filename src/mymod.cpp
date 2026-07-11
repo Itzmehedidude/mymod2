@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cerrno>
+#include <cstdlib>
 #include <string>
 #include <fcntl.h>
 #include <unistd.h>
@@ -30,13 +31,34 @@ static std::string readTargetPackage() {
     return pkg;
 }
 
+// Reads delay in milliseconds from /data/local/tmp/mymod/delay.txt
+// Defaults to 0 (no delay) if the file is missing or invalid.
+static int readDelayMs() {
+    FILE *f = fopen("/data/local/tmp/mymod/delay.txt", "r");
+    if (!f) {
+        return 0; // no delay configured - not an error, just default
+    }
+    char buf[32] = {0};
+    if (fgets(buf, sizeof(buf), f) == nullptr) {
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+    int ms = atoi(buf);
+    if (ms < 0) ms = 0;
+    if (ms > 60000) ms = 60000; // sanity cap at 60s so a bad value can't hang the app forever
+    return ms;
+}
+
 class MyModule : public zygisk::ModuleBase {
 public:
     void onLoad(zygisk::Api *api, JNIEnv *env) override {
         this->api = api;
         this->env = env;
-        target = readTargetPackage(); // read once per forked process
-        LOGI("module loaded onLoad(), target=%s", target.empty() ? "(none)" : target.c_str());
+        target = readTargetPackage();
+        delayMs = readDelayMs();
+        LOGI("module loaded onLoad(), target=%s, delayMs=%d",
+             target.empty() ? "(none)" : target.c_str(), delayMs);
     }
 
     void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
@@ -47,8 +69,6 @@ public:
             LOGI("TARGET APP STARTED: %s (uid=%d)", appName, args->uid);
 
             // Open the library FD now, while still root/zygote-privileged.
-            // The permission check happens here, at open() time - not later
-            // when the process has transitioned into the app's own domain.
             libFd = open("/data/local/tmp/mymod/random_library.so", O_RDONLY);
             if (libFd < 0) {
                 LOGI("Failed to open library as root: errno=%d (%s)", errno, strerror(errno));
@@ -63,7 +83,7 @@ public:
     }
 
     void postAppSpecialize(const zygisk::AppSpecializeArgs *args) override {
-        if (libFd < 0) return; // not our target, or the open() failed earlier
+        if (libFd < 0) return;
 
         if (!args || !args->nice_name) {
             close(libFd);
@@ -72,15 +92,18 @@ public:
         }
 
         const char *appName = env->GetStringUTFChars(args->nice_name, nullptr);
+
+        if (delayMs > 0) {
+            LOGI("Delaying library load by %d ms for %s", delayMs, appName);
+            usleep((useconds_t)delayMs * 1000);
+        }
+
         LOGI("PostAppSpecialize: loading library via fd for %s", appName);
 
         android_dlextinfo extinfo = {};
         extinfo.flags = ANDROID_DLEXT_USE_LIBRARY_FD;
         extinfo.library_fd = libFd;
 
-        // Name here is just a label for the linker/debugger; the fd is what
-        // actually gets loaded, so the app's domain never has to open() the
-        // path itself post-transition.
         void *handle = android_dlopen_ext("random_library.so", RTLD_NOW | RTLD_GLOBAL, &extinfo);
 
         close(libFd);
@@ -98,6 +121,7 @@ public:
 private:
     std::string target;
     int libFd = -1;
+    int delayMs = 0;
     zygisk::Api *api;
     JNIEnv *env;
 };
