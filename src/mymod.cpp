@@ -11,7 +11,7 @@
 
 static std::string readTargetPackage() {
     // Ensure your app.txt contains the exact package name (e.g., com.example.game)
-    FILE *f = fopen("/data/local/tmp/mymod/app.txt", "r");
+    FILE *f = fopen("/data/adb/modules/mymod/app.txt", "r");
     if (!f) {
         LOGI("app.txt not found at /data/local/tmp/mymod/app.txt");
         return "";
@@ -62,7 +62,7 @@ public:
             LOGI("Target detected in postAppSpecialize: %s. Attempting load...", appName);
 
             // Path to your target library
-            const char* libPath = "/data/local/tmp/random_library.so";
+            const char* libPath = "/data/adb/modules/mymod/random_library.so";
 
             // Attempt to load the library
             // RTLD_NOW: resolve symbols immediately
