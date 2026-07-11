@@ -11,7 +11,7 @@
 static std::string readTargetPackage() {
     FILE *f = fopen("/data/local/tmp/mymod/app.txt", "r");
     if (!f) {
-        LOGI("app.txt not found");
+        LOGI("app.txt not found, errno=%d (%s)", errno, strerror(errno));
         return "";
     }
     char buf[256] = {0};
