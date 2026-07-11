@@ -1,19 +1,17 @@
-#include <dlfcn.h>
 #include <android/log.h>
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include <vector>
+#include <dlfcn.h> // Required for dlopen
 #include "zygisk.hpp"
 
 #define LOG_TAG "MyMod"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 static std::string readTargetPackage() {
-    // Ensure your app.txt contains the exact package name (e.g., com.example.game)
-    FILE *f = fopen("/data/adb/modules/mymod/app.txt", "r");
+    FILE *f = fopen("/data/local/tmp/mymod/app.txt", "r");
     if (!f) {
-        LOGI("app.txt not found at /data/local/tmp/mymod/app.txt");
+        LOGI("app.txt not found");
         return "";
     }
     char buf[256] = {0};
@@ -22,9 +20,7 @@ static std::string readTargetPackage() {
         return "";
     }
     fclose(f);
-    
     std::string pkg(buf);
-    // Trim potential whitespace or newline characters
     while (!pkg.empty() && (pkg.back() == '\n' || pkg.back() == '\r' || pkg.back() == ' '))
         pkg.pop_back();
     return pkg;
@@ -35,18 +31,19 @@ public:
     void onLoad(zygisk::Api *api, JNIEnv *env) override {
         this->api = api;
         this->env = env;
-        LOGI("module loaded via onLoad()");
+        LOGI("module loaded onLoad()");
     }
 
     void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
-        // We only check the package name here
         if (!args || !args->nice_name) return;
 
         const char *appName = env->GetStringUTFChars(args->nice_name, nullptr);
         std::string target = readTargetPackage();
 
         if (!target.empty() && target == appName) {
-            LOGI("Target detected in preAppSpecialize: %s", appName);
+            LOGI("TARGET APP STARTED: %s (uid=%d)", appName, args->uid);
+        } else {
+            LOGI("app started (not target): %s", appName);
         }
 
         env->ReleaseStringUTFChars(args->nice_name, appName);
@@ -59,20 +56,15 @@ public:
         std::string target = readTargetPackage();
 
         if (!target.empty() && target == appName) {
-            LOGI("Target detected in postAppSpecialize: %s. Attempting load...", appName);
-
-            // Path to your target library
-            const char* libPath = "/data/adb/modules/mymod/random_library.so";
-
-            // Attempt to load the library
-            // RTLD_NOW: resolve symbols immediately
-            // RTLD_GLOBAL: make symbols visible to other modules
-            void* handle = dlopen(libPath, RTLD_NOW | RTLD_GLOBAL);
-
+            LOGI("PostAppSpecialize: Loading library for %s", appName);
+            
+            // Attempt to load the .so file
+            void* handle = dlopen("/data/local/tmp/mymod/random_library.so", RTLD_NOW | RTLD_GLOBAL);
+            
             if (handle) {
-                LOGI("SUCCESS: Library loaded at address: %p", handle);
+                LOGI("SUCCESS: Library loaded at %p", handle);
             } else {
-                LOGI("FAILURE: dlopen failed! Error: %s", dlerror());
+                LOGI("FAILURE: dlopen error: %s", dlerror());
             }
         }
 
@@ -84,5 +76,4 @@ private:
     JNIEnv *env;
 };
 
-// Register the module
 REGISTER_ZYGISK_MODULE(MyModule)
